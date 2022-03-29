@@ -52,7 +52,16 @@ from megatron.utils import calc_params_l2_norm
 from megatron.schedules import get_forward_backward_func
 from megatron.utils import report_memory
 
-
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    FullyShardedDataParallel as FSDP,
+    CPUOffload,
+    BackwardPrefetch,
+)
+from torch.distributed.fsdp.wrap import (
+    default_auto_wrap_policy,
+    enable_wrap,
+    wrap,
+)
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
@@ -245,8 +254,22 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
             )
         model.model_type = model_type
 
+    
+    if mpu.get_data_parallel_rank() == 0:
+        #print(f" \n Model built ---> {model}")
+        print(f"\n About to shard...")
+        model.cuda(torch.cuda.current_device())
+        sharded_model = FSDP(model,
+            fsdp_auto_wrap_policy=default_auto_wrap_policy,
+            cpu_offload=CPUOffload(offload_params=False)  # test cpu offload
+            )
+        
+        print(f" \n Sharded Model built ---> {sharded_model}")
+
     if not isinstance(model, list):
         model = [model]
+    
+    
 
     # Set tensor model parallel attributes if not set.
     # Only parameters that are already tensor model parallel have these
@@ -256,6 +279,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
         for param in model_module.parameters():
             mpu.set_defaults_if_not_set_tensor_model_parallel_attributes(param)
 
+    
     # Print number of parameters.
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on (tensor, pipeline) '
@@ -344,10 +368,15 @@ def setup_model_and_optimizer(model_provider_func, model_type):
     args = get_args()
 
     model = get_model(model_provider_func, model_type)
+    print(f"\n\n** Model built **\n\n")
 
     unwrapped_model = unwrap_model(model,
                                    (torchDDP, LocalDDP, Float16Module))
+
+    print(f"** Model unwrapped \n")
+
     optimizer = get_megatron_optimizer(unwrapped_model)
+
 
     lr_scheduler = get_learning_rate_scheduler(optimizer)
 
