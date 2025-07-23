@@ -1,0 +1,77 @@
+torchrun --nproc_per_node=4 \
+  --nnodes=1 --node_rank=0 --master_addr=localhost --master_port=6000 \
+  pretrain_gpt.py \
+  --use-mcore-models \
+  --num-layers 32 \
+  --hidden-size 4096 \
+  --ffn-hidden-size 14336 \
+  --num-attention-heads 32 \
+  --group-query-attention \
+  --num-query-groups 8 \
+  --kv-channels 128 \
+  --seq-length 8192 \
+  --max-position-embeddings 8192 \
+  --position-embedding-type rope \
+  --rotary-base 1000000 \
+  --rotary-percent 1.0 \
+  --attention-dropout 0.0 \
+  --hidden-dropout 0.0 \
+  --swiglu \
+  --init-method-std 0.0134 \
+  --attention-backend fused \
+  --apply-layernorm-1p \
+  --untie-embeddings-and-output-weights \
+  --disable-bias-linear \
+  --micro-batch-size 1 \
+  --global-batch-size 128 \
+  --train-samples 10000000 \
+  --lr-decay-samples 9900000 \
+  --lr-warmup-samples 100000 \
+  --lr 0.00015 \
+  --min-lr 0.00001 \
+  --decoupled-lr 5.0e-4 \
+  --decoupled-min-lr 4.5e-5 \
+  --lr-decay-style cosine \
+  --clip-grad 1.0 \
+  --weight-decay 0.1 \
+  --adam-beta1 0.9 \
+  --adam-beta2 0.95 \
+  --bf16 \
+  --grad-reduce-in-bf16 \
+  --cross-entropy-loss-fusion \
+  --calculate-per-token-loss \
+  --manual-gc \
+  --empty-unused-memory-level 1 \
+  --exit-duration-in-mins 235 \
+  --fp8-format hybrid \
+  --fp8-amax-history-len 1024 \
+  --fp8-amax-compute-algo max \
+  --fp8-param-gather \
+  --tensor-model-parallel-size 1 \
+  --context-parallel-size 1 \
+  --sequence-parallel \
+  --use-distributed-optimizer \
+  --overlap-grad-reduce \
+  --overlap-param-gather \
+  --data-path ~/datasets/wikitext/wikitext_text_document \
+  --tokenizer-type HuggingFaceTokenizer \
+  --tokenizer-model ~/.cache/huggingface/hub/models--meta-llama--Meta-Llama-3-8B-Instruct/snapshots/8afb486c1db24fe5011ec46dfbe5b5dccdb575c2 \
+  --data-cache-path ~/megatron/cache/llama3_8b_fp8 \
+  --split '99,1,0' \
+  --no-create-attention-mask-in-dataloader \
+  --no-mmap-bin-files \
+  --num-workers 1 \
+  --vocab-size 128256 \
+  --log-interval 1 \
+  --eval-iters 32 \
+  --eval-interval 100 \
+  --save-interval 1000 \
+  --log-throughput \
+  --profile \
+  --profile-step-start 4 \
+  --profile-step-end 6 \
+  --ckpt-format torch_dist \
+  --distributed-timeout-minutes 2 \
+  --save ~/megatron/checkpoints/llama3_8b_fp8 \
+  --load ~/megatron/checkpoints/llama3_8b_fp8 \
+  --tensorboard-dir ~/megatron/tensorboard_logs/llama3_8b_fp8 2>&1 | tee ~/logs/megatron_llama38b_pretrain
