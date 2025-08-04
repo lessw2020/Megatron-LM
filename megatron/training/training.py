@@ -102,6 +102,14 @@ from megatron.core.num_microbatches_calculator import (
     update_num_microbatches,
 )
 
+# Import token throughput monitor
+from megatron.core.titan_metrics import (
+    initialize_throughput_monitor,
+    update_throughput,
+    log_throughput,
+    calculate_tokens_in_batch,
+)
+
 from .async_utils import maybe_finalize_async_save
 from .utils import (
     append_to_progress_log,
@@ -1271,7 +1279,7 @@ def setup_model_and_optimizer(
         # set dense model related args in to global args before getting dense model
         args.num_experts = None
         args.expert_model_parallel_size = 1
-        args.ffn_hidden_size = moe_ffn_hidden_size * args.moe_upcycling_granularity 
+        args.ffn_hidden_size = moe_ffn_hidden_size * args.moe_upcycling_granularity
 
         # get dense model
         dense_model_for_upcycling = get_model(model_provider_func, model_type)
@@ -2244,6 +2252,11 @@ def train(
         torch.distributed.barrier()
         print_rank_0(f">>> Weight hashes match after {iteration} iterations...")
 
+    # Initialize token throughput monitor
+    if iteration == start_iteration:
+        initialize_throughput_monitor(log_freq=1)
+        print_rank_0("Token throughput monitor initialized")
+
     # Run training iterations till done.
     while iteration < args.train_iters:
         if args.profile and torch.distributed.get_rank() in args.profile_ranks:
@@ -2295,6 +2308,11 @@ def train(
         # Run training step.
         args.curr_iteration = iteration
         ft_integration.on_training_step_start()
+
+        # Calculate tokens in this batch for throughput monitoring
+        tokens_in_batch = calculate_tokens_in_batch(args)
+        update_throughput(tokens_in_batch)
+
         (
             loss_dict,
             skipped_iter,
@@ -2373,6 +2391,15 @@ def train(
                 decoupled_learning_rate = param_group['lr']
             else:
                 learning_rate = param_group['lr']
+        # Log token throughput metrics
+        if not skipped_iter:
+            # Extract loss value for logging (use first loss if multiple losses)
+            loss_value = None
+            if loss_dict:
+                first_key = next(iter(loss_dict))
+                loss_value = loss_dict[first_key].item()
+            log_throughput(loss=loss_value)
+
         report_memory_flag = training_log(
             loss_dict,
             total_loss_dict,
